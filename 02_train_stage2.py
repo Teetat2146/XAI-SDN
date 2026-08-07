@@ -1,5 +1,5 @@
 """
-03 — โมเดลชั้นที่ 2: Multi-class (จำแนกชนิด attack)
+02 — โมเดลชั้นที่ 2 (stage 2): Multi-class จำแนกชนิด attack
 
 หน้าที่ของชั้นนี้ในระบบจริง:
     รับเฉพาะ flow ที่ชั้นที่ 1 บอกว่า "น่าสงสัย" แล้วจำแนกว่าเป็น attack ชนิดไหน
@@ -10,7 +10,10 @@
     ถ้าใส่ Normal เข้าไปเทรนด้วย จะกลายเป็นทำงานซ้ำกับชั้นแรก
     และตัวเลขที่ได้จะไม่สะท้อนการใช้งานจริง
 
-รัน:  python 03_train_multiclass.py   (ต้องรัน 01 ก่อน)
+รัน:  python 02_train_stage2.py   (ต้องรัน 01 ก่อน)
+
+หมายเหตุ: ไฟล์นี้ต้องรัน *ก่อน* stage 1 เพราะ SHAP ที่ได้จากโมเดลนี้
+         คือตัวที่ใช้คัดฟีเจอร์ไปให้ stage 1 (ดู 03 และ 04)
 """
 import joblib
 import numpy as np
@@ -70,18 +73,18 @@ def main():
 
         for k, v in rows[name].items():
             print(f"  {k:20s} {v:.4f}")
-        joblib.dump(model, config.MODEL_DIR / f"multi_{name}.pkl")
+        joblib.dump(model, config.MODEL_DIR / f"stage2_{name}.pkl")
 
     table = pd.DataFrame(rows).T.sort_values("f1", ascending=False)
     common.banner("สรุปเปรียบเทียบ (multi-class, macro average)")
     print(table.to_string())
-    common.save_table(table, "03_multiclass_comparison.csv")
+    common.save_table(table, "02_stage2_comparison.csv")
 
     # ---- บันทึกตัวที่ดีที่สุด + encoder ----
     # สคริปต์ 04 จะโหลดสองไฟล์นี้ไปใช้ต่อ จึงไม่ต้องเทรนซ้ำ
     best = table.index[0]
-    best_model = joblib.load(config.MODEL_DIR / f"multi_{best}.pkl")
-    joblib.dump(best_model, config.MODEL_DIR / "multi_best.pkl")
+    best_model = joblib.load(config.MODEL_DIR / f"stage2_{best}.pkl")
+    joblib.dump(best_model, config.MODEL_DIR / "stage2_best.pkl")
     joblib.dump(le, config.MODEL_DIR / "label_encoder.pkl")   # ต้องเก็บไว้แปลงเลขกลับเป็นชื่อคลาส
 
     # ---- ดูผลรายคลาส ----

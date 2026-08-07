@@ -138,6 +138,7 @@ def main():
         print(f"  เตือน: ยังมีคอลัมน์ที่ไม่ใช่ตัวเลข {non_numeric} — ตรวจสอบก่อนเทรน")
 
     df.to_parquet(config.CLEAN_PARQUET, index=False)
+    print(f"  จำนวนแถวสุดท้าย: {len(df):,} แถว")      # ← เพิ่มบรรทัดนี้
     print(f"  ฟีเจอร์ที่ใช้เทรนได้: {len(feats)} ตัว")
     print(f"  [saved] {config.CLEAN_PARQUET}")
 
