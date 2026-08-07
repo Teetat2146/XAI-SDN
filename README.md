@@ -26,7 +26,13 @@ notebook ไม่เทรนอะไรใหม่ แค่โหลดโ�
 
 ## Dataset
 
-InSDN — อ่านจาก `~/Downloads/` แบบ read-only ไม่แตะต้นฉบับ
+**InSDN** — dataset สาธารณะสำหรับงาน intrusion detection บน SDN
+
+> M. S. Elsayed, N.-A. Le-Khac, and A. D. Jurcut,
+> "InSDN: A Novel SDN Intrusion Dataset," *IEEE Access*, vol. 8, 2020.
+
+ไฟล์ CSV ต้นฉบับอยู่ใน `data/raw/` — โปรดตรวจสอบเงื่อนไขการใช้งานจากแหล่งต้นทาง
+ก่อนนำไปเผยแพร่ต่อ และอ้างอิง paper ข้างต้นทุกครั้งที่ใช้ในงานตีพิมพ์
 
 | ไฟล์ | แถว | เนื้อหา |
 |---|---:|---|
