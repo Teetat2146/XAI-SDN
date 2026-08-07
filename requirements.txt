@@ -1,0 +1,9 @@
+pandas
+scikit-learn
+xgboost
+shap
+matplotlib
+pyarrow
+joblib
+ipykernel
+tabulate

@@ -1,0 +1,19 @@
+# หมายเหตุ: git ไม่รองรับ comment ต่อท้ายบรรทัด ต้องเขียนแยกบรรทัดเท่านั้น
+
+# Python virtual environment — ห้ามขึ้น git เด็ดขาด (764 MB)
+# เพื่อนสร้างใหม่เองได้จาก requirements.txt
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# ไฟล์ที่สร้างใหม่ได้จากการรันสคริปต์ ไม่ต้องเก็บใน git
+# insdn_clean.parquet สร้างจาก 01_prepare_data.py
+data/insdn_clean.parquet
+# models/ สร้างจาก 02_train_binary.py และ 03_train_multiclass.py
+models/
+# figures/ สร้างจาก shap_explore.ipynb
+figures/
+
+# macOS
+.DS_Store
