@@ -49,17 +49,23 @@ def main():
     add("---\n")
 
     # ---------- stage 2 ----------
-    add("## 1. Stage 2 — Multi-class (7 ชนิด attack)\n")
-    t = read("02_stage2_comparison.csv")
-    if t is not None:
-        add(md(t.rename(columns={"latency_ms_per_1k": "latency (ms/1k)"})) + "\n")
-        add("**อ่านยังไง:** accuracy ต่างกันแค่หลักหมื่น แต่ **macro-F1 ต่างกันมาก**")
-        add("— RandomForest แพ้เพราะพลาดคลาสเล็ก นี่คือเหตุผลที่ต้องใช้ macro-F1\n")
+    add("## 1. Stage 2 — Multi-class\n")
+    add("เทรน 2 แบบ: `attack_only` (7 คลาส) และ `with_normal` (8 คลาส)\n")
+    for variant, label in [("attack_only", "attack อย่างเดียว (7 คลาส)"),
+                           ("with_normal", "มี Normal ด้วย (8 คลาส)")]:
+        t = read(f"02_stage2_{variant}_comparison.csv")
+        if t is not None:
+            add(f"### {label}\n")
+            add(md(t.rename(columns={"latency_ms_per_1k": "latency (ms/1k)"})) + "\n")
+    add("**อ่านยังไง:** accuracy ต่างกันแค่หลักหมื่น แต่ **macro-F1 ต่างกันมาก**")
+    add("— RandomForest แพ้เพราะพลาดคลาสเล็ก นี่คือเหตุผลที่ต้องใช้ macro-F1")
+    add("macro-F1 ของสองแบบเทียบกันตรง ๆ ไม่ได้เพราะจำนวนคลาสไม่เท่ากัน")
+    add("การตัดสินว่าแบบไหนดีกว่าอยู่ที่หัวข้อ 3 (ฟีเจอร์จากแบบไหนทำให้ stage 1 ดีกว่า)\n")
 
     # ---------- SHAP ----------
     add("---\n")
     add("## 2. SHAP — ฟีเจอร์สำคัญของแต่ละ attack\n")
-    t = read("03_shap_importance_per_class.csv")
+    t = read("03_shap_importance_attack_only.csv")
     if t is not None:
         add("ค่า normalize ให้แต่ละคอลัมน์รวมกันได้ 1 แล้ว จึงเทียบข้ามคลาสได้\n")
         for cls in t.columns:
@@ -80,6 +86,13 @@ def main():
     add("**นี่คือจุดที่แนวคิดของอาจารย์ถูกทดสอบ**")
     add("ทุกแถวตรึง recall ≥ 99% เท่ากัน และตรึงโมเดล = XGBoost")
     add("เพื่อให้ตัวแปรที่ต่างกันมีแค่ *ชุดฟีเจอร์* อย่างเดียว\n")
+    add("ชื่อชุดอ่านว่า `<แหล่ง SHAP>_<วิธีรวม>` — กริดเต็ม 2 แกน:\n")
+    add("| ชุด | SHAP มาจาก | ตอบคำถาม |")
+    add("|---|---|---|")
+    add("| `attack7_*` | stage 2 (7 คลาส) | แยกชนิด attack |")
+    add("| `normal8_*` | stage 2 (8 คลาส) | แยกชนิด attack + แยกจาก Normal |")
+    add("| `binary_*` | โมเดล binary | แยก Normal จาก Attack (เพดานอ้างอิง) |\n")
+    add("ส่วนหลัง `_` คือวิธีรวมข้ามคลาส: `union` / `intersection` / `mean` / `dynamic`\n")
     t = read("04_stage1_comparison.csv", index_col=None)
     if t is not None:
         t = t.drop(columns=["model"], errors="ignore")

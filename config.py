@@ -28,16 +28,61 @@ CLEAN_PARQUET = DATA_DIR / "insdn_clean.parquet"
 SEED = 42
 TEST_SIZE = 0.2
 
-# ---- คอลัมน์ที่ต้องตัดออก: identifier / leakage ----
-# เหตุผลรายตัวอยู่ใน README หัวข้อ "Data leakage"
-LEAK_COLS = [
-    "Flow ID",    # string ประกอบจาก IP+Port+Protocol = ยัดคำตอบให้โมเดลตรง ๆ
-    "Src IP",     # เครื่องที่ยิง attack ใน testbed มี IP ตายตัว
-    "Dst IP",     # เครื่องเหยื่อ (metasploitable) ใช้ IP เดิมตลอด
-    "Src Port",   # ephemeral port ผูกกับ session ที่ยิง
-    "Dst Port",   # ใน testbed ผูกกับชนิด attack เกือบ 1:1
-    "Timestamp",  # attack ยิงเป็นช่วงเวลา โมเดลจะจำ "ช่วงนี้คือ attack"
+# ================================================================
+# กลุ่มคอลัมน์ที่ "ตัดได้" — ใช้ประกอบเป็นระดับการตัดฟีเจอร์
+# ================================================================
+# หลักคิด: ไม่ตัดตั้งแต่ตอนเตรียมข้อมูล แต่เก็บไว้ทั้งหมดแล้วให้แต่ละการทดลอง
+# เลือกเองว่าจะตัดถึงระดับไหน — จะได้พิสูจน์ *ด้วยการทดลอง* ว่าตัดแต่ละกลุ่มถูกไหม
+# (ประชุม 2026-08-08: "รู้ได้ไงว่าถ้าไม่ตัดมันจะผิด" → ต้องเป็น by experiment)
+
+# กลุ่ม 1 — identifier: จำ testbed ได้ ไม่ใช่พฤติกรรมของ traffic
+# หมายเหตุ cardinality (จาก 343,889 แถว):
+#   Flow ID 234,971 ค่า (68%) เกือบเป็นเลขประจำแถว
+#   Src IP  122,868 ค่า (36%) สูงเพราะ DDoS ปลอม source IP
+#   Dst IP    1,081 ค่า · Timestamp 1,392 ค่า
+ID_COLS = ["Flow ID", "Src IP", "Dst IP", "Timestamp"]
+
+# กลุ่ม 2 — Port: shortcut ที่ผูกกับ testbed (BFA→22, Web-Attack→80)
+PORT_COLS = ["Src Port", "Dst Port"]
+
+# กลุ่ม 3 — ค่าคงที่ทั้งคอลัมน์ (บั๊กของ CICFlowMeter ให้ 0 หมด)
+# คำนวณอัตโนมัติใน 01 แล้วบันทึกลง 01_drop_lists.json — ที่นี่เป็นค่าอ้างอิง
+CONST_COLS_EXPECTED = 12
+
+# กลุ่ม 4 — ซ้ำซ้อน (correlation = 1.0000) เก็บชื่อที่เป็นมาตรฐานกว่า ตัดอีกตัว
+DUP_COLS = [
+    "Subflow Fwd Pkts",   # = Tot Fwd Pkts
+    "Subflow Bwd Pkts",   # = Tot Bwd Pkts
+    "Subflow Fwd Byts",   # = TotLen Fwd Pkts
+    "Subflow Bwd Byts",   # = TotLen Bwd Pkts
+    "Fwd Seg Size Avg",   # = Fwd Pkt Len Mean
+    "Bwd Seg Size Avg",   # = Bwd Pkt Len Mean
+    "Bwd PSH Flags",      # = PSH Flag Cnt
+    "Bwd URG Flags",      # = URG Flag Cnt
 ]
+
+# กลุ่ม 5 — คำนวณแพงตอน real-time (ต้องรอ flow จบก่อนถึงคำนวณได้)
+# เป็นข้ออ้างหลักของการลดฟีเจอร์ที่เขียนไว้ใน README แต่ยังไม่เคยพิสูจน์
+EXPENSIVE_COLS = [f"{k} {s}" for k in ("Active", "Idle")
+                  for s in ("Mean", "Std", "Max", "Min")]
+
+# ---- ระดับการตัด: สะสมกันไปเรื่อย ๆ ----
+# ระดับ n ตัดทุกอย่างของระดับ n-1 บวกกลุ่มใหม่ → รู้ว่ากลุ่มไหนมีผลแค่ไหน
+FEATURE_LEVELS = ["raw", "no_id", "no_const", "no_port",
+                  "no_dup", "no_expensive", "shap_top15"]
+
+# ---- แบบการแบ่ง train/test ----
+#   random    : สุ่ม 80/20 จากข้อมูลปนกันหมด — วัดประสิทธิภาพในสภาพแวดล้อมเดิม
+#   ovs2meta  : train OVS → test metasploitable — วัดว่า generalize ได้ไหม
+#   meta2ovs  : ทิศกลับ
+# ต้องดูทั้ง 3 เพราะ random อย่างเดียวจับ leakage ไม่ได้ (โมเดลจำ IP ก็ยังทายถูก)
+SPLITS = ["random", "ovs2meta", "meta2ovs"]
+
+# B/C ใช้เฉพาะคลาสที่มีทั้งสอง testbed — BOTNET/Web-Attack มีแค่ OVS, U2R มีแค่ meta
+# multi-class ทายคลาสที่ไม่มี output node ไม่ได้ ถ้าไม่ตัดออก macro-F1 จะเพี้ยน
+SHARED_CLASSES = ["Normal", "DDoS", "DoS", "Probe", "BFA"]
+
+DROP_LISTS_JSON = OUT_DIR / "01_drop_lists.json"
 
 LABEL_COL = "Label"
 NORMAL_LABEL = "Normal"

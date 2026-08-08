@@ -1,104 +1,173 @@
 """
-02 — โมเดลชั้นที่ 2 (stage 2): Multi-class จำแนกชนิด attack
+02 — stage 2 (multi-class): ทดลองว่าควรตัดฟีเจอร์กลุ่มไหนบ้าง
 
-หน้าที่ของชั้นนี้ในระบบจริง:
-    รับเฉพาะ flow ที่ชั้นที่ 1 บอกว่า "น่าสงสัย" แล้วจำแนกว่าเป็น attack ชนิดไหน
-    ซับซ้อนกว่าชั้นแรกได้ เพราะไม่ต้องรันกับทุก flow
+ที่มา (ประชุม 2026-08-08):
+    อาจารย์ท้วงว่าเราตัดฟีเจอร์โดยอ้างเหตุผล ยังไม่เคยพิสูจน์
+    "รู้ได้ไงว่าถ้าไม่ตัดมันจะผิด" → ต้องเป็น by experiment
 
-ทำไมเทรนเฉพาะแถวที่เป็น attack:
-    ในระบบจริงชั้นนี้จะไม่มีวันเห็น traffic ปกติ (ชั้นแรกกรองไปแล้ว)
-    ถ้าใส่ Normal เข้าไปเทรนด้วย จะกลายเป็นทำงานซ้ำกับชั้นแรก
-    และตัวเลขที่ได้จะไม่สะท้อนการใช้งานจริง
+การทดลอง: 7 ระดับการตัด × 3 แบบการแบ่งข้อมูล × 3 โมเดล = 63 รอบ
+
+หัวใจอยู่ที่ **การเทียบระหว่าง split**:
+    random อย่างเดียวจับ leakage ไม่ได้ — โมเดลที่จำ IP ได้ก็ยังทายถูก
+    เพราะ IP เดียวกันอยู่ทั้ง train และ test
+    ต้องดู ovs2meta / meta2ovs ซึ่ง IP เป็นคนละชุด ความจำใช้ไม่ได้
+
+    ช่องว่าง (random − cross-env) = ขนาดของการ "จำ" แทนที่จะ "เรียน"
 
 รัน:  python 02_train_stage2.py   (ต้องรัน 01 ก่อน)
-
-หมายเหตุ: ไฟล์นี้ต้องรัน *ก่อน* stage 1 เพราะ SHAP ที่ได้จากโมเดลนี้
-         คือตัวที่ใช้คัดฟีเจอร์ไปให้ stage 1 (ดู 03 และ 04)
 """
+import json
+
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 from sklearn.preprocessing import LabelEncoder
 
 import common
 import config
 
 
+def run_one(df, level, split_kind, feature_sets=None):
+    """เทรน 3 โมเดลที่ระดับ/split หนึ่ง — คืน (rows, per_class_rows)
+
+    per_class สำคัญมาก: macro-F1 รวมบอกแค่ว่า "ประมาณ 0.45" แต่ไม่บอกว่า
+    คลาสไหนพัง ซึ่งเป็นข้อมูลที่ตีความผลได้จริง (เช่น DoS ข้ามสภาพแวดล้อมไม่ได้)
+    """
+    # shap_top15 อ่านรายชื่อจาก JSON ที่ 03 สร้าง (ถ้ายังไม่มีก็ข้าม)
+    if level == "shap_top15":
+        if not feature_sets:
+            return [], []
+        feats = feature_sets
+    else:
+        feats = common.feature_columns(df, level=level)
+
+    train, test = common.make_split(df, split_kind)
+
+    # encode label ให้เป็นเลข — fit บน train+test เพื่อให้ mapping ตรงกัน
+    le = LabelEncoder().fit(pd.concat([train["attack_class"], test["attack_class"]]))
+    y_tr = le.transform(train["attack_class"])
+    y_te = le.transform(test["attack_class"])
+
+    rows, pc_rows = [], []
+    for name, model in common.build_models(n_classes=len(le.classes_)).items():
+        model.fit(train[feats], y_tr)
+        r = common.evaluate(model, test[feats], y_te, average="macro")
+
+        # เก็บ F1/recall รายคลาสไว้ด้วย (เฉพาะ XGBoost พอ ไม่งั้นตารางบวม)
+        if name == "XGBoost":
+            rep = classification_report(y_te, model.predict(test[feats]),
+                                        target_names=le.classes_,
+                                        output_dict=True, zero_division=0)
+            for cls in le.classes_:
+                pc_rows.append({"level": level, "split": split_kind, "attack_class": cls,
+                                "support": int(rep[cls]["support"]),
+                                "f1": rep[cls]["f1-score"],
+                                "recall": rep[cls]["recall"]})
+        r.update(level=level, split=split_kind, model=name,
+                 n_features=len(feats), n_classes=len(le.classes_),
+                 n_train=len(train), n_test=len(test))
+        rows.append(r)
+        print(f"    {name:14s} macro-F1 {r['f1']:.4f} | acc {r['accuracy']:.4f} "
+              f"| {r['latency_ms_per_1k']:.2f} ms/1k")
+
+        # เก็บโมเดลไว้ให้ 03 ใช้ดึง SHAP (เฉพาะ split random)
+        if split_kind == "random":
+            joblib.dump(model, config.MODEL_DIR / f"stage2_{level}_{name}.pkl")
+            if name == "XGBoost":
+                joblib.dump(le, config.MODEL_DIR / f"label_encoder_{level}.pkl")
+
+    return rows, pc_rows
+
+
 def main():
     df = common.load_clean()
 
-    # เอาเฉพาะแถวที่เป็น attack (binary_label == 1) ตัด Normal ทิ้ง
-    df = df[df["binary_label"] == 1].reset_index(drop=True)
+    # shap_top15 ต้องรอ 03 สร้างก่อน — รอบแรกจะยังไม่มี
+    shap_feats = None
+    if config.FEATURE_SETS_JSON.exists():
+        sets = json.loads(config.FEATURE_SETS_JSON.read_text(encoding="utf-8"))
+        shap_feats = sets.get(f"mean")  # ชุด global-mean top-K
 
-    # ---- แปลงชื่อคลาสเป็นตัวเลข ----
-    # XGBoost รับ label เป็นตัวเลข 0,1,2,... เท่านั้น รับ string ไม่ได้
-    # LabelEncoder แปลง ['BFA','DDoS',...] → [0,1,...] และจำ mapping ไว้แปลงกลับได้
-    le = LabelEncoder()
-    y = pd.Series(le.fit_transform(df["attack_class"]), name="y")
-    X = df[common.feature_columns(df)]
+    all_rows, all_pc = [], []
+    for level in config.FEATURE_LEVELS:
+        for split_kind in config.SPLITS:
+            n_feat = ("?" if level == "shap_top15"
+                      else len(common.feature_columns(df, level=level)))
+            common.banner(f"[{level}] ({n_feat} ฟีเจอร์) — split: {split_kind}")
+            rows, pc = run_one(df, level, split_kind, shap_feats)
+            if not rows:
+                print("    (ข้าม — ยังไม่มีชุดฟีเจอร์จาก 03)")
+            all_rows += rows
+            all_pc += pc
 
-    common.banner(f"Multi-class: {len(le.classes_)} ชนิด attack — {len(X):,} แถว")
+    grid = pd.DataFrame(all_rows)[
+        ["level", "split", "model", "n_features", "n_classes",
+         "f1", "accuracy", "precision", "recall", "latency_ms_per_1k"]
+    ]
+    common.save_table(grid, "02_stage2_grid.csv", index=False)
 
-    # ---- ดูความไม่สมดุลของข้อมูลก่อน ----
-    # ต้องดูก่อนเทรนเสมอ เพราะมันกำหนดว่าจะใช้ metric ตัวไหน
-    dist = df["attack_class"].value_counts()
-    print(dist.to_string())
-    print(f"\n  imbalance ratio (มากสุด/น้อยสุด) = {dist.max() / dist.min():,.0f} เท่า")
-    print("  → ใช้ Macro-F1 เป็น metric หลัก ไม่ใช่ accuracy")
-    print("     เพราะ accuracy จะถูกกลบด้วยคลาสใหญ่จนมองไม่เห็นว่าคลาสเล็กพัง")
+    # ================================================================
+    # ตารางหลัก — generalization gap
+    # ================================================================
+    # ตรึงโมเดลไว้ที่ XGBoost เพื่อให้ตัวแปรที่ต่างมีแค่ระดับการตัดฟีเจอร์
+    common.banner("ตารางหลัก — macro-F1 แต่ละระดับ × แต่ละ split (XGBoost)")
 
-    # เตือนเรื่องคลาสที่เล็กเกินไปจนผลไม่มีความหมายทางสถิติ
-    # เช่น U2R มี 17 แถว → หลังแบ่ง test 20% เหลือทดสอบแค่ 3 แถว
-    # ทายถูก 3 จาก 3 ได้ recall 1.00 ซึ่งไม่ได้แปลว่าโมเดลเก่ง แค่บังเอิญ
-    rare = dist[dist < 50]
-    if len(rare):
-        print(f"\n  เตือน: คลาส {list(rare.index)} มีน้อยกว่า 50 แถว")
-        print("         ผลที่ได้แทบไม่มีนัยสำคัญทางสถิติ — พิจารณาใช้เป็น zero-shot class แทน")
+    x = grid[grid.model == "XGBoost"]
+    piv = x.pivot_table(index="level", columns="split", values="f1")
+    piv = piv.reindex([lv for lv in config.FEATURE_LEVELS if lv in piv.index])
+    piv.insert(0, "n_features",
+               x.groupby("level")["n_features"].first().reindex(piv.index))
 
-    # stratify=y สำคัญมากตรงนี้ — ถ้าไม่ใส่ คลาสที่มี 17 แถวอาจไม่มีเลยใน test set
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=config.TEST_SIZE, random_state=config.SEED, stratify=y
-    )
+    # ช่องว่าง = random − ค่าเฉลี่ยของ cross-environment
+    cross = piv[["ovs2meta", "meta2ovs"]].mean(axis=1)
+    piv["gap"] = piv["random"] - cross
 
-    # ---- เทรน 3 โมเดล ----
-    rows = {}
-    for name, model in common.build_models(n_classes=len(le.classes_)).items():
-        print(f"\n--- {name} ---")
-        model.fit(X_train, y_train)
+    print(piv.round(4).to_string())
+    common.save_table(piv, "02_generalization_gap.csv")
 
-        # average="macro" : เฉลี่ยแบบให้ทุกคลาสน้ำหนักเท่ากัน (ดูคำอธิบายใน common.evaluate)
-        rows[name] = common.evaluate(model, X_test, y_test, average="macro")
+    print("\nอ่านตารางนี้ยังไง:")
+    print("  random    = ทำข้อสอบชุดเดิม (train/test จาก capture เดียวกัน)")
+    print("  ovs2meta  = ทำข้อสอบชุดใหม่ (คนละ testbed)")
+    print("  gap       = ช่องว่าง = ขนาดของการ 'จำ' แทนที่จะ 'เรียน'")
+    print("\n  ถ้า raw มี gap สูงกว่าระดับอื่นชัดเจน = ยืนยันว่าการตัด identifier ถูกต้อง")
+    print("  ถ้า gap ใกล้กันหมด = ตัดไปโดยไม่จำเป็น ต้องรายงานตามจริง")
 
-        for k, v in rows[name].items():
-            print(f"  {k:20s} {v:.4f}")
-        joblib.dump(model, config.MODEL_DIR / f"stage2_{name}.pkl")
+    # ================================================================
+    # ตารางรอง — แยกตามโมเดล
+    # ================================================================
+    common.banner("แยกตามโมเดล (macro-F1)")
+    by_model = grid.pivot_table(index=["level", "split"], columns="model", values="f1")
+    print(by_model.round(4).to_string())
+    common.save_table(by_model, "02_stage2_by_model.csv")
 
-    table = pd.DataFrame(rows).T.sort_values("f1", ascending=False)
-    common.banner("สรุปเปรียบเทียบ (multi-class, macro average)")
-    print(table.to_string())
-    common.save_table(table, "02_stage2_comparison.csv")
+    # ================================================================
+    # per-class — คลาสไหนพังตอนข้ามสภาพแวดล้อม
+    # ================================================================
+    if all_pc:
+        pc = pd.DataFrame(all_pc)
+        common.save_table(pc, "02_per_class.csv", index=False)
 
-    # ---- บันทึกตัวที่ดีที่สุด + encoder ----
-    # สคริปต์ 04 จะโหลดสองไฟล์นี้ไปใช้ต่อ จึงไม่ต้องเทรนซ้ำ
-    best = table.index[0]
-    best_model = joblib.load(config.MODEL_DIR / f"stage2_{best}.pkl")
-    joblib.dump(best_model, config.MODEL_DIR / "stage2_best.pkl")
-    joblib.dump(le, config.MODEL_DIR / "label_encoder.pkl")   # ต้องเก็บไว้แปลงเลขกลับเป็นชื่อคลาส
+        for split_kind in config.SPLITS:
+            sub = pc[pc.split == split_kind]
+            if sub.empty:
+                continue
+            common.banner(f"F1 รายคลาส — split {split_kind} (XGBoost)")
+            t = sub.pivot_table(index="attack_class", columns="level", values="f1")
+            t = t[[lv for lv in config.FEATURE_LEVELS if lv in t.columns]]
+            t.insert(0, "support", sub.groupby("attack_class")["support"].first())
+            print(t.round(4).to_string())
+            common.save_table(t, f"02_per_class_{split_kind}.csv")
 
-    # ---- ดูผลรายคลาส ----
-    # ตรงนี้สำคัญกว่าตัวเลขรวม เพราะบอกว่าคลาสไหนพัง
-    common.banner(f"per-class ของตัวที่ดีที่สุด: {best}")
-    pred = best_model.predict(X_test)
-    print(classification_report(y_test, pred, target_names=le.classes_,
-                               digits=4, zero_division=0))
+        print("\n  อ่านยังไง: แถวที่ F1 ต่ำคือคลาสที่ทำให้ macro-F1 รวมตกลง")
+        print("  ถ้าคลาสเดียวพังแล้วลาก macro ลง ต้องระบุในรายงาน ไม่ใช่สรุปว่าโมเดลแย่ทั้งหมด")
 
-    # confusion matrix บอกว่าโมเดล "สับสน" ระหว่างคลาสไหนกับคลาสไหน
-    # อ่านแนวนอน: แถว BFA คอลัมน์ Probe = จำนวน BFA ที่ถูกทายผิดเป็น Probe
-    cm = confusion_matrix(y_test, pred)
-    print("Confusion matrix (แถว=จริง, คอลัมน์=ทำนาย):")
-    print(pd.DataFrame(cm, index=le.classes_, columns=le.classes_).to_string())
+    common.banner("latency (ms ต่อ 1000 flows) — split random")
+    lat = grid[grid.split == "random"].pivot_table(
+        index="level", columns="model", values="latency_ms_per_1k")
+    lat = lat.reindex([lv for lv in config.FEATURE_LEVELS if lv in lat.index])
+    print(lat.round(3).to_string())
+    common.save_table(lat, "02_stage2_latency.csv")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+{
+  "id": [
+    "Flow ID",
+    "Src IP",
+    "Dst IP",
+    "Timestamp"
+  ],
+  "port": [
+    "Src Port",
+    "Dst Port"
+  ],
+  "const": [
+    "Fwd PSH Flags",
+    "Fwd URG Flags",
+    "CWE Flag Count",
+    "ECE Flag Cnt",
+    "Fwd Byts/b Avg",
+    "Fwd Pkts/b Avg",
+    "Fwd Blk Rate Avg",
+    "Bwd Byts/b Avg",
+    "Bwd Pkts/b Avg",
+    "Bwd Blk Rate Avg",
+    "Init Fwd Win Byts",
+    "Fwd Seg Size Min"
+  ],
+  "dup": [
+    "Subflow Fwd Pkts",
+    "Subflow Bwd Pkts",
+    "Subflow Fwd Byts",
+    "Subflow Bwd Byts",
+    "Fwd Seg Size Avg",
+    "Bwd Seg Size Avg",
+    "Bwd PSH Flags",
+    "Bwd URG Flags"
+  ],
+  "expensive": [
+    "Active Mean",
+    "Active Std",
+    "Active Max",
+    "Active Min",
+    "Idle Mean",
+    "Idle Std",
+    "Idle Max",
+    "Idle Min"
+  ]
+}

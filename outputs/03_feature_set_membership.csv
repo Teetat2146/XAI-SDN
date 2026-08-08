@@ -1,66 +1,66 @@
-,all_features,union_top15,intersection_top15,global_mean_top15,dynamic_k,shap_from_binary
-Protocol,1,1,0,1,1,0
-Flow Duration,1,1,0,1,1,0
-Tot Fwd Pkts,1,1,0,0,1,0
-Tot Bwd Pkts,1,1,0,0,1,0
-TotLen Fwd Pkts,1,1,0,1,1,0
-TotLen Bwd Pkts,1,1,0,0,1,0
-Fwd Pkt Len Max,1,1,0,0,1,0
-Fwd Pkt Len Min,1,0,0,0,0,0
-Fwd Pkt Len Mean,1,1,0,0,1,0
-Fwd Pkt Len Std,1,1,0,0,1,0
-Bwd Pkt Len Max,1,1,0,0,1,0
-Bwd Pkt Len Min,1,0,0,0,0,0
-Bwd Pkt Len Mean,1,1,0,1,1,0
-Bwd Pkt Len Std,1,1,0,0,0,0
-Flow Byts/s,1,1,0,0,1,1
-Flow Pkts/s,1,1,0,1,1,1
-Flow IAT Mean,1,1,0,1,1,0
-Flow IAT Std,1,1,0,0,1,0
-Flow IAT Max,1,1,0,0,1,1
-Flow IAT Min,1,1,1,1,1,1
-Fwd IAT Tot,1,1,0,0,1,0
-Fwd IAT Mean,1,0,0,0,1,0
-Fwd IAT Std,1,1,0,0,1,1
-Fwd IAT Max,1,0,0,0,0,0
-Fwd IAT Min,1,1,0,1,1,0
-Bwd IAT Tot,1,1,0,0,1,0
-Bwd IAT Mean,1,1,0,1,1,0
-Bwd IAT Std,1,1,0,0,1,0
-Bwd IAT Max,1,1,0,0,0,1
-Bwd IAT Min,1,1,0,1,1,1
-Bwd PSH Flags,1,0,0,0,1,0
-Bwd URG Flags,1,0,0,0,0,0
-Fwd Header Len,1,1,0,1,1,1
-Bwd Header Len,1,1,0,1,1,1
-Fwd Pkts/s,1,1,0,1,1,1
-Bwd Pkts/s,1,1,0,0,1,0
-Pkt Len Min,1,0,0,0,0,0
-Pkt Len Max,1,0,0,0,1,1
-Pkt Len Mean,1,1,0,1,1,0
-Pkt Len Std,1,1,0,0,1,0
-Pkt Len Var,1,0,0,0,0,0
-FIN Flag Cnt,1,1,0,0,1,1
-SYN Flag Cnt,1,1,0,0,1,1
-RST Flag Cnt,1,0,0,0,0,0
-PSH Flag Cnt,1,0,0,0,0,0
-ACK Flag Cnt,1,1,0,0,1,1
-URG Flag Cnt,1,0,0,0,0,0
-Down/Up Ratio,1,0,0,0,1,0
-Pkt Size Avg,1,1,0,0,1,0
-Fwd Seg Size Avg,1,0,0,0,0,0
-Bwd Seg Size Avg,1,0,0,0,0,0
-Subflow Fwd Pkts,1,0,0,0,0,0
-Subflow Fwd Byts,1,0,0,0,0,0
-Subflow Bwd Pkts,1,0,0,0,0,0
-Subflow Bwd Byts,1,0,0,0,0,0
-Init Bwd Win Byts,1,1,1,1,1,1
-Fwd Act Data Pkts,1,0,0,0,1,0
-Active Mean,1,0,0,0,0,0
-Active Std,1,0,0,0,0,0
-Active Max,1,0,0,0,0,0
-Active Min,1,0,0,0,0,0
-Idle Mean,1,0,0,0,0,0
-Idle Std,1,0,0,0,0,0
-Idle Max,1,0,0,0,0,0
-Idle Min,1,0,0,0,0,0
+,all_features,attack7_union,attack7_intersection,attack7_mean,attack7_dynamic,normal8_union,normal8_intersection,normal8_mean,normal8_dynamic,binary_topk,binary_dynamic
+Protocol,1,1,0,1,1,1,0,1,1,0,0
+Flow Duration,1,1,0,1,1,1,0,0,1,0,0
+Tot Fwd Pkts,1,1,0,0,1,1,0,0,1,0,0
+Tot Bwd Pkts,1,1,0,0,1,1,0,0,1,0,0
+TotLen Fwd Pkts,1,1,0,1,1,1,0,0,1,0,0
+TotLen Bwd Pkts,1,1,0,0,1,1,0,0,1,0,0
+Fwd Pkt Len Max,1,1,0,0,1,1,0,0,1,0,0
+Fwd Pkt Len Min,1,0,0,0,0,0,0,0,0,0,0
+Fwd Pkt Len Mean,1,1,0,0,1,1,0,0,1,0,0
+Fwd Pkt Len Std,1,1,0,0,1,1,0,1,1,0,0
+Bwd Pkt Len Max,1,1,0,0,1,1,0,1,1,0,1
+Bwd Pkt Len Min,1,0,0,0,0,0,0,0,0,0,0
+Bwd Pkt Len Mean,1,1,0,1,1,1,0,1,1,0,0
+Bwd Pkt Len Std,1,1,0,0,0,1,0,0,1,0,0
+Flow Byts/s,1,1,0,0,1,1,0,1,1,1,1
+Flow Pkts/s,1,1,0,1,1,1,0,1,1,1,1
+Flow IAT Mean,1,1,0,1,1,1,0,1,1,0,1
+Flow IAT Std,1,1,0,0,1,1,0,0,1,0,0
+Flow IAT Max,1,1,0,0,1,1,0,0,1,1,1
+Flow IAT Min,1,1,1,1,1,1,1,1,1,1,1
+Fwd IAT Tot,1,1,0,0,1,0,0,0,1,0,0
+Fwd IAT Mean,1,0,0,0,1,1,0,0,1,0,0
+Fwd IAT Std,1,1,0,0,1,1,0,0,1,1,1
+Fwd IAT Max,1,0,0,0,0,0,0,0,0,0,0
+Fwd IAT Min,1,1,0,1,1,1,0,0,1,0,0
+Bwd IAT Tot,1,1,0,0,1,1,0,0,1,0,0
+Bwd IAT Mean,1,1,0,1,1,1,0,0,1,0,1
+Bwd IAT Std,1,1,0,0,1,1,0,0,1,0,0
+Bwd IAT Max,1,1,0,0,0,1,0,0,1,1,1
+Bwd IAT Min,1,1,0,1,1,1,0,1,1,1,1
+Bwd PSH Flags,1,0,0,0,1,0,0,0,0,0,0
+Bwd URG Flags,1,0,0,0,0,0,0,0,0,0,0
+Fwd Header Len,1,1,0,1,1,1,0,1,1,1,1
+Bwd Header Len,1,1,0,1,1,1,0,1,1,1,1
+Fwd Pkts/s,1,1,0,1,1,1,0,1,1,1,1
+Bwd Pkts/s,1,1,0,0,1,1,0,1,1,0,1
+Pkt Len Min,1,0,0,0,0,0,0,0,0,0,1
+Pkt Len Max,1,0,0,0,1,1,0,1,1,1,1
+Pkt Len Mean,1,1,0,1,1,1,0,0,1,0,0
+Pkt Len Std,1,1,0,0,1,1,0,0,1,0,0
+Pkt Len Var,1,0,0,0,0,0,0,0,0,0,0
+FIN Flag Cnt,1,1,0,0,1,1,0,0,1,1,1
+SYN Flag Cnt,1,1,0,0,1,1,0,0,1,1,1
+RST Flag Cnt,1,0,0,0,0,1,0,0,1,0,0
+PSH Flag Cnt,1,0,0,0,0,0,0,0,0,0,0
+ACK Flag Cnt,1,1,0,0,1,1,0,0,1,1,1
+URG Flag Cnt,1,0,0,0,0,0,0,0,0,0,0
+Down/Up Ratio,1,0,0,0,1,0,0,0,0,0,0
+Pkt Size Avg,1,1,0,0,1,0,0,0,1,0,1
+Fwd Seg Size Avg,1,0,0,0,0,0,0,0,0,0,0
+Bwd Seg Size Avg,1,0,0,0,0,0,0,0,0,0,0
+Subflow Fwd Pkts,1,0,0,0,0,0,0,0,0,0,0
+Subflow Fwd Byts,1,0,0,0,0,0,0,0,0,0,0
+Subflow Bwd Pkts,1,0,0,0,0,0,0,0,0,0,0
+Subflow Bwd Byts,1,0,0,0,0,0,0,0,0,0,0
+Init Bwd Win Byts,1,1,1,1,1,1,1,1,1,1,1
+Fwd Act Data Pkts,1,0,0,0,1,0,0,0,0,0,0
+Active Mean,1,0,0,0,0,0,0,0,0,0,0
+Active Std,1,0,0,0,0,0,0,0,0,0,0
+Active Max,1,0,0,0,0,0,0,0,0,0,0
+Active Min,1,0,0,0,0,0,0,0,0,0,0
+Idle Mean,1,0,0,0,0,0,0,0,0,0,0
+Idle Std,1,0,0,0,0,0,0,0,0,0,0
+Idle Max,1,0,0,0,0,0,0,0,0,0,0
+Idle Min,1,0,0,0,0,1,0,0,1,0,0

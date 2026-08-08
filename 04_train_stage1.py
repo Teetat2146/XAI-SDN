@@ -54,13 +54,31 @@ def pick_threshold(proba, y_true, target_recall):
     return best
 
 
-def eval_at_threshold(model, X_test, y_test, thr):
-    """วัดผล stage 1 ที่ threshold ที่กำหนด"""
+def eval_at_threshold(model, X_test, y_test, thr, n_repeat=15):
+    """วัดผล stage 1 ที่ threshold ที่กำหนด
+
+    n_repeat: จับเวลาซ้ำกี่รอบ แล้วเอา **ค่าต่ำสุด**
+
+    ทำไมต้องวัดซ้ำและใช้ min:
+        การจับเวลาครั้งเดียวมี noise สูงมาก (วัดโมเดลเดียวกันคนละรอบ
+        ต่างกันได้ถึง 70% เพราะ CPU ถูกแย่งใช้โดยโปรเซสอื่น)
+
+        ใช้ min ไม่ใช่ mean/median เพราะ noise เป็นแบบ "บวกด้านเดียว" —
+        การถูกขัดจังหวะทำให้ช้าลงได้ แต่ไม่มีอะไรทำให้เร็วกว่าความจริงได้
+        ค่าต่ำสุดจึงใกล้เคียงเวลาที่แท้จริงที่สุด (เป็นวิธีเดียวกับที่ timeit ใช้)
+
+        ถึงอย่างนั้นความต่างของ latency ระหว่างชุดฟีเจอร์ก็ยังเล็กมาก
+        เพราะเวลา inference ของ XGBoost ขึ้นกับจำนวนต้นไม้และความลึกเป็นหลัก
+        ไม่ใช่จำนวนฟีเจอร์ — ดูหัวข้อข้อจำกัดใน README
+    """
     # จับเวลา predict_proba ไม่ใช่ predict เพราะระบบจริงต้องได้ความน่าจะเป็น
     # มาเทียบกับ threshold ที่เราตั้งเอง
-    t0 = time.perf_counter()
-    proba = model.predict_proba(X_test)[:, 1]
-    elapsed = time.perf_counter() - t0
+    times = []
+    for _ in range(n_repeat):
+        t0 = time.perf_counter()
+        proba = model.predict_proba(X_test)[:, 1]
+        times.append(time.perf_counter() - t0)
+    elapsed = float(np.min(times))
 
     flagged = proba >= thr
     is_attack = y_test == 1

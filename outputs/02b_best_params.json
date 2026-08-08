@@ -1,0 +1,21 @@
+{
+  "DecisionTree": {
+    "min_samples_leaf": 1,
+    "max_features": "sqrt",
+    "max_depth": 12,
+    "criterion": "entropy"
+  },
+  "RandomForest": {
+    "n_estimators": 80,
+    "max_features": "sqrt",
+    "max_depth": 12,
+    "criterion": "entropy"
+  },
+  "XGBoost": {
+    "reg_lambda": 0.01,
+    "n_estimators": 140,
+    "max_depth": 6,
+    "learning_rate": 0.2,
+    "colsample_bytree": 0.8
+  }
+}

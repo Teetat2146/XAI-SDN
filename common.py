@@ -35,17 +35,87 @@ def load_clean() -> pd.DataFrame:
     return pd.read_parquet(config.CLEAN_PARQUET)
 
 
-def feature_columns(df) -> list[str]:
-    """คืนเฉพาะชื่อคอลัมน์ที่เป็นฟีเจอร์จริง (ตัด META_COLS ออก)"""
-    return [c for c in df.columns if c not in META_COLS]
+_DROP_CACHE = None
 
 
-def split_xy(df, target):
+def drop_lists() -> dict:
+    """อ่านรายชื่อคอลัมน์ที่ตัดได้แต่ละกลุ่ม (01 เป็นคนสร้าง)"""
+    global _DROP_CACHE
+    if _DROP_CACHE is None:
+        import json
+        if not config.DROP_LISTS_JSON.exists():
+            raise SystemExit("ยังไม่มี drop lists — รัน `python 01_prepare_data.py` ก่อน")
+        _DROP_CACHE = json.loads(config.DROP_LISTS_JSON.read_text(encoding="utf-8"))
+    return _DROP_CACHE
+
+
+# ระดับการตัด: สะสมกันไปเรื่อย ๆ (ระดับหลังตัดทุกอย่างของระดับก่อน + กลุ่มใหม่)
+LEVEL_GROUPS = {
+    "raw":          [],
+    "no_id":        ["id"],
+    "no_const":     ["id", "const"],
+    "no_port":      ["id", "const", "port"],
+    "no_dup":       ["id", "const", "port", "dup"],
+    "no_expensive": ["id", "const", "port", "dup", "expensive"],
+}
+
+
+def feature_columns(df, level: str = "no_port") -> list[str]:
+    """คืนชื่อคอลัมน์ที่เป็นฟีเจอร์ ตามระดับการตัดที่เลือก
+
+    level="raw"          ไม่ตัดอะไร (identifier ถูก encode เป็นเลขแล้ว)
+    level="no_port"      ค่าเริ่มต้น = ที่ใช้กันมาตลอด
+    level="shap_top15"   ไม่รองรับที่นี่ — อ่านจาก 03_feature_sets.json แทน
+    """
+    if level not in LEVEL_GROUPS:
+        raise ValueError(f"ไม่รู้จักระดับ '{level}' — เลือกจาก {list(LEVEL_GROUPS)}")
+
+    dl = drop_lists()
+    skip = set(META_COLS)
+    for g in LEVEL_GROUPS[level]:
+        skip |= set(dl[g])
+    return [c for c in df.columns if c not in skip]
+
+
+def make_split(df, kind: str = "random"):
+    """แบ่ง train/test 3 แบบ — คืน (train_df, test_df)
+
+    random    สุ่ม 80/20 จากข้อมูลปนกันหมด (stratify ตามคลาส)
+              → วัดประสิทธิภาพในสภาพแวดล้อมเดิม จับ leakage ไม่ได้
+    ovs2meta  train = Normal(ครึ่ง) + OVS   test = Normal(อีกครึ่ง) + metasploitable
+    meta2ovs  ทิศกลับ
+              → วัดว่า generalize ข้ามสภาพแวดล้อมได้ไหม ตรงนี้แหละที่ leakage โผล่
+
+    ทำไม Normal ต้องแบ่งครึ่ง: OVS/metasploitable ไม่มีแถว Normal เลย
+    ถ้าไม่ใส่ Normal ใน test จะวัด false positive ไม่ได้
+    และถ้าใส่ทั้งหมดทั้งสองฝั่ง แถวเดียวกันจะอยู่ทั้ง train และ test = leakage
+    """
+    from sklearn.model_selection import train_test_split
+
+    if kind == "random":
+        return train_test_split(df, test_size=config.TEST_SIZE,
+                                random_state=config.SEED,
+                                stratify=df["attack_class"])
+
+    # B/C ใช้เฉพาะคลาสที่มีทั้งสอง testbed ไม่งั้น macro-F1 เพี้ยน
+    d = df[df["attack_class"].isin(config.SHARED_CLASSES)]
+    normal = d[d["source"] == "Normal"]
+    n_a, n_b = train_test_split(normal, test_size=0.5, random_state=config.SEED)
+
+    ovs = d[d["source"] == "OVS"]
+    mt = d[d["source"] == "metasploitable"]
+    a, b = (ovs, mt) if kind == "ovs2meta" else (mt, ovs)
+
+    return (pd.concat([n_a, a], ignore_index=True),
+            pd.concat([n_b, b], ignore_index=True))
+
+
+def split_xy(df, target, level: str = "no_port"):
     """แยกเป็น X (ฟีเจอร์) กับ y (คำตอบ)
 
     target ระบุว่าจะทำนายอะไร — 'binary_label' สำหรับชั้น 1, 'attack_class' สำหรับชั้น 2
     """
-    return df[feature_columns(df)], df[target]
+    return df[feature_columns(df, level)], df[target]
 
 
 def evaluate(model, X_test, y_test, average="binary") -> dict:
@@ -94,6 +164,15 @@ def build_models(n_classes: int = 2) -> dict:
     from sklearn.tree import DecisionTreeClassifier
     from xgboost import XGBClassifier
 
+    # ถ้ามีผลจาก 02b (Random Search) ให้ใช้ค่าที่จูนแล้ว
+    # ไม่งั้นใช้ค่า default — แต่ต้องบังคับ max_depth ให้เท่ากันทุกโมเดล
+    # ไม่งั้น sklearn (None = ไม่จำกัด) กับ XGBoost (6) จะเทียบกันไม่ยุติธรรม
+    tuned = {}
+    _p = config.OUT_DIR / "02b_best_params.json"
+    if _p.exists():
+        import json as _json
+        tuned = _json.loads(_p.read_text(encoding="utf-8"))
+
     xgb_kwargs = dict(
         n_estimators=config.N_ESTIMATORS,
         random_state=config.SEED,
@@ -110,13 +189,19 @@ def build_models(n_classes: int = 2) -> dict:
         xgb_kwargs["objective"] = "binary:logistic"
         xgb_kwargs["eval_metric"] = "logloss"
 
+    dt_kwargs = dict(random_state=config.SEED)
+    rf_kwargs = dict(n_estimators=config.N_ESTIMATORS,
+                     random_state=config.SEED, n_jobs=-1)
+
+    dt_kwargs.update(tuned.get("DecisionTree", {}))
+    rf_kwargs.update(tuned.get("RandomForest", {}))
+    xgb_kwargs.update(tuned.get("XGBoost", {}))
+
     return {
         # ต้นไม้ต้นเดียว — เบาและเร็วที่สุด อ่านกฎได้ตรง ๆ แต่ overfit ง่าย
-        "DecisionTree": DecisionTreeClassifier(random_state=config.SEED),
+        "DecisionTree": DecisionTreeClassifier(**dt_kwargs),
         # หลายต้นแบบสุ่ม แล้วโหวตกัน — ลด overfit แต่ช้ากว่าและอธิบายยากขึ้น
-        "RandomForest": RandomForestClassifier(
-            n_estimators=config.N_ESTIMATORS, random_state=config.SEED, n_jobs=-1
-        ),
+        "RandomForest": RandomForestClassifier(**rf_kwargs),
         # ต้นไม้ที่สร้างทีละต้นเพื่อแก้ที่ต้นก่อนหน้าทำผิด (boosting) — แม่นสุดในงานตารางแบบนี้
         "XGBoost": XGBClassifier(**xgb_kwargs),
     }
@@ -165,8 +250,59 @@ def banner(title):
     print(f"\n{'=' * 72}\n{title}\n{'=' * 72}")
 
 
+def _fmt(v):
+    """จัดรูปแบบตัวเลขให้อ่านง่ายแต่ไม่เสียข้อมูล
+
+    ปัด 4 ตำแหน่งเฉย ๆ ไม่ได้ เพราะค่าอย่าง fp_rate = 0.000073 จะกลายเป็น 0.0
+    จึงต้องดูขนาดของค่าก่อนแล้วเลือกรูปแบบ
+    """
+    if isinstance(v, (bool, np.bool_)):
+        return str(v)
+    if isinstance(v, (int, np.integer)):
+        return f"{v:,}"
+    if isinstance(v, float):
+        if v != v:                      # NaN
+            return "-"
+        if v == 0:
+            return "0"
+        if abs(v) < 1e-4:               # เล็กมาก → เลขยกกำลัง
+            return f"{v:.2e}"
+        if 0.999 < abs(v) < 1:          # ใกล้ 1 มาก → ต้องใช้ 6 ตำแหน่ง
+            # ไม่งั้น 0.999973 กับ 0.999583 จะกลายเป็น 1.0000 เหมือนกันหมด
+            # ซึ่งเป็นตัวเลขที่งานนี้ต้องแยกให้ออก (recall ของ stage 1)
+            return f"{v:.6f}"
+        if abs(v) >= 1000:              # ใหญ่ → ใส่คอมมา
+            return f"{v:,.1f}"
+        return f"{v:.4f}"
+    return str(v)
+
+
 def save_table(df, name, index=True):
-    """บันทึกตารางเป็น CSV ใน outputs/ — เอาไปวางในรายงานได้เลย"""
+    """บันทึกตารางเป็น 2 รูปแบบ
+
+    1. outputs/<name>.csv        — ค่าดิบเต็มความละเอียด สำหรับให้สคริปต์อื่นอ่านต่อ
+    2. outputs/tables/<name>.md  — ตาราง markdown ปัดเลขแล้ว สำหรับคนอ่าน
+                                   เปิดใน VS Code กด Cmd+Shift+V เห็นเป็นตารางเลย
+
+    ที่ต้องมี 2 แบบเพราะ CSV ที่มีทศนิยม 16 ตำแหน่งอ่านด้วยตาไม่ไหว
+    แต่ถ้าปัดเลขใน CSV แล้วสคริปต์ปลายน้ำจะได้ค่าที่คลาดเคลื่อน
+    """
     path = config.OUT_DIR / name
     df.to_csv(path, index=index)
+
+    md_dir = config.OUT_DIR / "tables"
+    md_dir.mkdir(exist_ok=True)
+    md_path = md_dir / (path.stem + ".md")
+
+    pretty = df.copy()
+    for c in pretty.columns:
+        pretty[c] = pretty[c].map(_fmt)
+
+    # disable_numparse=True สำคัญ: ไม่งั้น tabulate จะแปลง string ที่เราจัดรูปแบบไว้แล้ว
+    # กลับเป็นตัวเลขและจัดใหม่เอง ทำให้ "0.999973" กลายเป็น "1"
+    lines = [f"# {path.stem}", "",
+             pretty.to_markdown(index=index, disable_numparse=True), ""]
+    md_path.write_text("\n".join(lines), encoding="utf-8")
+
     print(f"\n[saved] {path}")
+    print(f"[saved] {md_path}")

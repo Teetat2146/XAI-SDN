@@ -11,6 +11,8 @@
 
 รัน:  python 01_prepare_data.py
 """
+import json
+
 import numpy as np
 import pandas as pd
 
@@ -54,17 +56,31 @@ def main():
     print(f"\n  รวม             {df.shape[0]:>7,} แถว × {df.shape[1]} คอลัมน์")
 
     # ================================================================
-    # ขั้นที่ 2 — ตัดคอลัมน์ที่ทำให้เกิด data leakage
+    # ขั้นที่ 2 — encode คอลัมน์ที่เป็นตัวหนังสือ (ไม่ตัดทิ้ง)
     # ================================================================
-    # หลักคิด: คอลัมน์พวกนี้ไม่ได้ "ไม่มีประโยชน์" แต่ "มีประโยชน์เกินไปแบบผิด ๆ"
-    # ใน testbed เครื่องที่ยิง attack ใช้ IP เดิมตลอด โมเดลจะเรียนว่า "IP นี้ = attack"
-    # ได้ accuracy สวยแต่ใช้กับเครือข่ายจริงไม่ได้เลย เพราะ IP ในโลกจริงเปลี่ยนตลอด
-    common.banner("2. ตัดคอลัมน์ identifier / leakage")
+    # เดิมเราตัด identifier ทิ้งตรงนี้เลย แต่ประชุม 2026-08-08 อาจารย์ท้วงว่า
+    # ต้องพิสูจน์ *ด้วยการทดลอง* ว่าตัดถูก ไม่ใช่แค่อ้างเหตุผล
+    # → เก็บไว้ทั้งหมด แล้วให้แต่ละระดับใน 02 เลือกเองว่าจะตัดถึงไหน
+    #
+    # โมเดลรับได้แต่ตัวเลข จึงต้อง encode ก่อน:
+    #   Timestamp → epoch seconds (มีความหมายเชิงลำดับจริง)
+    #   ที่เหลือ  → LabelEncoder (รหัสประจำค่า ไม่มีความหมายเชิงลำดับ
+    #               แต่ tree แบ่งด้วยจุดตัด ไม่สนลำดับ จึงใช้ได้)
+    common.banner("2. encode คอลัมน์ตัวหนังสือ (เก็บไว้ ไม่ตัด)")
 
-    present = [c for c in config.LEAK_COLS if c in df.columns]
-    df = df.drop(columns=present)
-    for c in present:
-        print(f"  ตัด  {c}")
+    from sklearn.preprocessing import LabelEncoder
+
+    for c in config.ID_COLS:
+        if c not in df.columns:
+            continue
+        n_uniq = df[c].nunique()
+        if c == "Timestamp":
+            ts = pd.to_datetime(df[c], errors="coerce", dayfirst=True)
+            df[c] = ts.astype("int64") // 10**9      # epoch seconds
+            df[c] = df[c].fillna(-1)
+        else:
+            df[c] = LabelEncoder().fit_transform(df[c].astype(str))
+        print(f"  encode {c:12s} ค่าไม่ซ้ำ {n_uniq:>7,} ({n_uniq/len(df)*100:5.2f}% ของแถว)")
 
     # ================================================================
     # ขั้นที่ 3 — จัดการค่า inf และ NaN
@@ -103,27 +119,50 @@ def main():
     print(pd.crosstab(df["attack_class"], df["source"]).to_string())
 
     # ================================================================
-    # ขั้นที่ 5 — ตัดคอลัมน์ที่มีค่าเดียวทั้งคอลัมน์
+    # ขั้นที่ 5 — หากลุ่มคอลัมน์ที่ "ตัดได้" แล้วบันทึกรายชื่อ (ยังไม่ตัด)
     # ================================================================
-    # CICFlowMeter มีบั๊กที่รู้กันว่าคอลัมน์กลุ่ม bulk (Byts/b Avg, Blk Rate Avg)
-    # ออกมาเป็น 0 ทั้งคอลัมน์เสมอ
-    #
-    # ทำไมต้องตัดก่อนรัน SHAP:
-    #   ฟีเจอร์ที่มีค่าเดียวไม่ช่วยแยกอะไรได้เลย SHAP จะให้ค่า 0
-    #   แล้วเราจะสรุปว่า "ฟีเจอร์นี้ไม่สำคัญ" ซึ่งผิด — มันไม่สำคัญเพราะไม่มีข้อมูล
-    #   ไม่ใช่เพราะโมเดลพิจารณาแล้วไม่ใช้ ถ้าไม่ตัดจะได้ข้อสรุปที่ไร้ความหมาย
-    common.banner("5. ตัดคอลัมน์ที่เป็นค่าคงที่")
+    common.banner("5. หากลุ่มคอลัมน์ที่ตัดได้")
 
-    feats = common.feature_columns(df)
-    # nunique = นับจำนวนค่าที่ไม่ซ้ำ, <= 1 แปลว่ามีค่าเดียว (หรือว่างเปล่า)
-    constant = [c for c in feats if df[c].nunique(dropna=False) <= 1]
-    df = df.drop(columns=constant)
+    feats = [c for c in df.columns if c not in common.META_COLS]
 
-    print(f"  พบ {len(constant)} คอลัมน์ที่มีค่าเดียวทั้งคอลัมน์:")
-    for c in constant:
-        print(f"    - {c}")
-    if not constant:
-        print("    (ไม่มี)")
+    # กลุ่ม constant — ค่าเดียวทั้งคอลัมน์ (บั๊ก CICFlowMeter)
+    const_cols = [c for c in feats if df[c].nunique(dropna=False) <= 1]
+    print(f"  ค่าคงที่     {len(const_cols):>2} คอลัมน์")
+    for c in const_cols:
+        print(f"      {c}")
+
+    # กลุ่ม dup — ยืนยันว่า correlation สูงจริงก่อนใช้รายชื่อจาก config
+    num = [c for c in feats if pd.api.types.is_numeric_dtype(df[c])]
+    corr = df[num].corr().abs()
+    dup_cols = []
+    for c in config.DUP_COLS:
+        if c not in corr.columns:
+            continue
+        partner = corr[c].drop(index=c).idxmax()
+        v = corr.loc[c, partner]
+        if v >= 0.999:
+            dup_cols.append(c)
+            print(f"  ซ้ำซ้อน      {c:20s} ~ {partner:20s} r={v:.4f}")
+        else:
+            print(f"  ข้าม (r ต่ำ) {c:20s} ~ {partner:20s} r={v:.4f}")
+
+    drop_lists = {
+        "id": [c for c in config.ID_COLS if c in df.columns],
+        "port": [c for c in config.PORT_COLS if c in df.columns],
+        "const": const_cols,
+        "dup": dup_cols,
+        "expensive": [c for c in config.EXPENSIVE_COLS if c in df.columns],
+    }
+    config.DROP_LISTS_JSON.write_text(
+        json.dumps(drop_lists, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"\n  [saved] {config.DROP_LISTS_JSON}")
+
+    print("\n  จำนวนฟีเจอร์แต่ละระดับ:")
+    for lv in config.FEATURE_LEVELS:
+        if lv == "shap_top15":
+            print(f"    {lv:14s} (สร้างใน 03)")
+        else:
+            print(f"    {lv:14s} {len(common.feature_columns(df, level=lv)):>3} ตัว")
 
     # ================================================================
     # ขั้นที่ 6 — บันทึก
